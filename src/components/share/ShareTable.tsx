@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Popconfirm, Space, Table, Typography, message } from 'antd';
+import { Button, Form, Image, Input, InputNumber, Modal, Popconfirm, Space, Table, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import { useShareQuery } from '@/hooks/share/useShareQuery';
 import {
   useCreateShareMutation,
   useDeleteShareMutation,
   useUpdateShareMutation
 } from '@/hooks/share/useShareMutation';
+import { uploadFiles } from '@/services/upload/api';
 import type { ShareModel, ShareTemplate } from '@/services/share/types';
 
 interface ShareFormState {
@@ -18,6 +20,9 @@ interface ShareFormState {
 export function ShareTable() {
   const [form] = Form.useForm<ShareModel>();
   const [modalState, setModalState] = useState<ShareFormState>({ open: false, mode: 'create' });
+  const [image1List, setImage1List] = useState<UploadFile[]>([]);
+  const [image2List, setImage2List] = useState<UploadFile[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
   const { data = [], isLoading } = useShareQuery();
   const createMutation = useCreateShareMutation();
   const updateMutation = useUpdateShareMutation();
@@ -29,8 +34,18 @@ export function ShareTable() {
       { title: '模板名称', dataIndex: 'shareModelName', width: 180 },
       { title: '模板标题', dataIndex: 'shareModelTitle', width: 220 },
       { title: '模板类型', dataIndex: 'shareModelType', width: 120, render: (value?: number) => value ?? '-' },
-      { title: '主图地址', dataIndex: 'shareModelImage1', ellipsis: true },
-      { title: '副图地址', dataIndex: 'shareModelImage2', ellipsis: true },
+      {
+        title: '主图',
+        dataIndex: 'shareModelImage1',
+        width: 120,
+        render: (value?: string) => value ? <Image width={80} src={value} /> : '-'
+      },
+      {
+        title: '副图',
+        dataIndex: 'shareModelImage2',
+        width: 120,
+        render: (value?: string) => value ? <Image width={80} src={value} /> : '-'
+      },
       {
         title: '操作',
         width: 160,
@@ -51,6 +66,45 @@ export function ShareTable() {
     []
   );
 
+  const buildImageList = (id: string, url?: string): UploadFile[] => {
+    if (!url) return [];
+    return [{ uid: id, name: '模板图片', status: 'done', url }];
+  };
+
+  const createUploadHandler = (
+    fieldName: 'shareModelImage1' | 'shareModelImage2',
+    setList: React.Dispatch<React.SetStateAction<UploadFile[]>>
+  ): UploadProps['customRequest'] => {
+    return async (options) => {
+      setImageUploading(true);
+      try {
+        const uploadFile = options.file as File;
+        const result = await uploadFiles({ files: uploadFile });
+        const uploaded = result.successList[0];
+        if (!uploaded?.fileUrl) {
+          throw new Error('上传失败，请重试');
+        }
+        form.setFieldsValue({ [fieldName]: uploaded.fileUrl });
+        setList([
+          {
+            uid: uploaded.fileId || `${Date.now()}`,
+            name: uploaded.fileName || uploadFile.name,
+            status: 'done',
+            url: uploaded.fileUrl
+          }
+        ]);
+        options.onSuccess?.(uploaded);
+      } catch (error) {
+        options.onError?.(error as Error);
+      } finally {
+        setImageUploading(false);
+      }
+    };
+  };
+
+  const onUploadImage1 = createUploadHandler('shareModelImage1', setImage1List);
+  const onUploadImage2 = createUploadHandler('shareModelImage2', setImage2List);
+
   const openCreateModal = () => {
     setModalState({ open: true, mode: 'create' });
     form.setFieldsValue({
@@ -60,6 +114,8 @@ export function ShareTable() {
       shareModelImage1: '',
       shareModelImage2: ''
     });
+    setImage1List([]);
+    setImage2List([]);
   };
 
   const openEditModal = (record: ShareTemplate) => {
@@ -72,6 +128,8 @@ export function ShareTable() {
       shareModelImage1: record.shareModelImage1,
       shareModelImage2: record.shareModelImage2
     });
+    setImage1List(buildImageList(record.id || 'img1', record.shareModelImage1));
+    setImage2List(buildImageList(record.id || 'img2', record.shareModelImage2));
   };
 
   const onSubmit = async () => {
@@ -109,8 +167,13 @@ export function ShareTable() {
         title={modalState.mode === 'create' ? '新增模板' : '编辑模板'}
         open={modalState.open}
         onOk={onSubmit}
-        onCancel={() => setModalState({ open: false, mode: 'create' })}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
+        onCancel={() => {
+          setModalState({ open: false, mode: 'create' });
+          setImage1List([]);
+          setImage2List([]);
+          setImageUploading(false);
+        }}
+        confirmLoading={createMutation.isPending || updateMutation.isPending || imageUploading}
       >
         <Form form={form} layout="vertical">
           <Form.Item label="模板名称" name="shareModelName" rules={[{ required: true, message: '请输入模板名称' }]}>
@@ -122,11 +185,43 @@ export function ShareTable() {
           <Form.Item label="模板类型" name="shareModelType" rules={[{ required: true, message: '请输入模板类型' }]}>
             <InputNumber className="!w-full" min={0} precision={0} />
           </Form.Item>
-          <Form.Item label="主图地址" name="shareModelImage1">
-            <Input placeholder="请输入主图地址" />
+          <Form.Item name="shareModelImage1" hidden>
+            <Input />
           </Form.Item>
-          <Form.Item label="副图地址" name="shareModelImage2">
-            <Input placeholder="请输入副图地址" />
+          <Form.Item label="主图">
+            <Upload
+              accept=".jpg,.jpeg,.png"
+              listType="picture-card"
+              maxCount={1}
+              customRequest={onUploadImage1}
+              fileList={image1List}
+              onChange={({ fileList }) => setImage1List(fileList)}
+              onRemove={() => {
+                form.setFieldsValue({ shareModelImage1: '' });
+                return true;
+              }}
+            >
+              {image1List.length >= 1 ? null : '上传图片'}
+            </Upload>
+          </Form.Item>
+          <Form.Item name="shareModelImage2" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item label="副图">
+            <Upload
+              accept=".jpg,.jpeg,.png"
+              listType="picture-card"
+              maxCount={1}
+              customRequest={onUploadImage2}
+              fileList={image2List}
+              onChange={({ fileList }) => setImage2List(fileList)}
+              onRemove={() => {
+                form.setFieldsValue({ shareModelImage2: '' });
+                return true;
+              }}
+            >
+              {image2List.length >= 1 ? null : '上传图片'}
+            </Upload>
           </Form.Item>
         </Form>
       </Modal>
