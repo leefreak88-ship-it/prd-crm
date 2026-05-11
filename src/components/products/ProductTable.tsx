@@ -110,7 +110,8 @@ export function ProductTable() {
       {
         title: '价格(元)',
         dataIndex: 'goodsPrice',
-        render: (value?: number) => `¥${value?.toLocaleString('zh-CN') || '-'}`
+        render: (value?: number) =>
+          typeof value === 'number' ? `¥${(value / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'
       },
       {
         title: '图片地址', dataIndex: 'goodsImage',
@@ -168,7 +169,7 @@ export function ProductTable() {
       goodsName: record.goodsName,
       goodsImage: record.goodsImage,
       goodsTypeId: record.goodsTypeId,
-      goodsPrice: record.goodsPrice,
+      goodsPrice: typeof record.goodsPrice === 'number' ? record.goodsPrice / 100 : record.goodsPrice,
       idx: record.idx
     });
     if (record.goodsImage) {
@@ -214,11 +215,15 @@ export function ProductTable() {
   // 提交商品表单：按模式执行新增或编辑
   const onSubmit = async () => {
     const values = await productForm.validateFields();
+    const payload: ProductPayload = {
+      ...values,
+      goodsPrice: typeof values.goodsPrice === 'number' ? Math.round(values.goodsPrice * 100) : values.goodsPrice
+    };
     if (productModalState.mode === 'create') {
-      await createMutation.mutateAsync(values);
+      await createMutation.mutateAsync(payload);
       message.success('新增商品成功');
     } else if (productModalState.current?.id) {
-      await updateMutation.mutateAsync({ id: productModalState.current.id, payload: values });
+      await updateMutation.mutateAsync({ id: productModalState.current.id, payload });
       message.success('编辑商品成功');
     }
     setProductModalState({ open: false, mode: 'create' });
@@ -434,8 +439,8 @@ export function ProductTable() {
           <Form.Item label="所属分类" name="goodsTypeId" rules={[{ required: true, message: '请选择所属分类' }]}>
             <Select options={categoryList.map((item) => ({ label: item.goodsTypeName, value: item.id }))} />
           </Form.Item>
-          <Form.Item label="价格(分)" name="goodsPrice" rules={[{ required: true, message: '请输入价格' }]}>
-            <InputNumber className="!w-full" min={0} precision={0} placeholder="请输入价格（分）" />
+          <Form.Item label="价格(元)" name="goodsPrice" rules={[{ required: true, message: '请输入价格' }]}>
+            <InputNumber className="!w-full" min={0} precision={2} placeholder="请输入价格（元）" />
           </Form.Item>
           <Form.Item name="goodsImage" hidden>
             <Input />

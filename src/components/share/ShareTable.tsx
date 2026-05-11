@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Form, Image, Input, InputNumber, Modal, Popconfirm, Space, Table, Typography, Upload, message } from 'antd';
+import { Button, Form, Image, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import { useShareQuery } from '@/hooks/share/useShareQuery';
@@ -17,6 +17,17 @@ interface ShareFormState {
   current?: ShareTemplate;
 }
 
+const SHARE_MODEL_TYPE_OPTIONS = [
+  { label: '美团', value: 1 },
+  { label: '淘宝闪购', value: 2 },
+  { label: '京东', value: 3 }
+];
+
+const SHARE_MODEL_TYPE_LABEL_MAP: Record<number, string> = SHARE_MODEL_TYPE_OPTIONS.reduce(
+  (acc, item) => ({ ...acc, [item.value]: item.label }),
+  {}
+);
+
 export function ShareTable() {
   const [form] = Form.useForm<ShareModel>();
   const [modalState, setModalState] = useState<ShareFormState>({ open: false, mode: 'create' });
@@ -33,7 +44,12 @@ export function ShareTable() {
       { title: '模板ID', dataIndex: 'id', width: 180 },
       { title: '模板名称', dataIndex: 'shareModelName', width: 180 },
       { title: '模板标题', dataIndex: 'shareModelTitle', width: 220 },
-      { title: '模板类型', dataIndex: 'shareModelType', width: 120, render: (value?: number) => value ?? '-' },
+      {
+        title: '模板类型',
+        dataIndex: 'shareModelType',
+        width: 120,
+        render: (value?: number) => (value != null ? SHARE_MODEL_TYPE_LABEL_MAP[value] ?? value : '-')
+      },
       {
         title: '主图',
         dataIndex: 'shareModelImage1',
@@ -182,8 +198,8 @@ export function ShareTable() {
           <Form.Item label="模板标题" name="shareModelTitle" rules={[{ required: true, message: '请输入模板标题' }]}>
             <Input placeholder="请输入模板标题" />
           </Form.Item>
-          <Form.Item label="模板类型" name="shareModelType" rules={[{ required: true, message: '请输入模板类型' }]}>
-            <InputNumber className="!w-full" min={0} precision={0} />
+          <Form.Item label="模板类型" name="shareModelType" rules={[{ required: true, message: '请选择模板类型' }]}>
+            <Select placeholder="请选择模板类型" options={SHARE_MODEL_TYPE_OPTIONS} />
           </Form.Item>
           <Form.Item name="shareModelImage1" hidden>
             <Input />
