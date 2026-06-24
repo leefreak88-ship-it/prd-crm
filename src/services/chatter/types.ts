@@ -22,6 +22,7 @@ export interface Chatters {
     chatHandsName?: string;
     chatHandsPhone?: string;
     chatHandsWx?: string;
+    chatHandsWxAvatar?: string;
     createTime?: Date;
     deleted?: number;
     id?: string;
@@ -38,6 +39,7 @@ export interface ChatterReq {
     chatHandsName?: string;
     chatHandsPhone?: string;
     chatHandsWx?: string;
+    chatHandsWxAvatar?: string;
     createTime?: Date;
     deleted?: number;
     id?: string;

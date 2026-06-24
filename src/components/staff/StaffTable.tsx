@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd';
+import { Button, Form, Image, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
+import Compressor from 'compressorjs';
 import {
   useCreateStaffMutation,
   useDeleteStaffMutation,
   useUpdateStaffMutation
 } from '@/hooks/staff/useStaffMutation';
 import { useStaffQuery } from '@/hooks/staff/useStaffQuery';
+import { uploadFiles } from '@/services/upload/api';
 import type { ChatterReq, Chatters } from '@/services/chatter/types';
 
 interface StaffFormState {
@@ -19,6 +22,8 @@ interface StaffFormState {
 export function StaffTable() {
   const [form] = Form.useForm<ChatterReq>();
   const [modalState, setModalState] = useState<StaffFormState>({ open: false, mode: 'create' });
+  const [avatarImageList, setAvatarImageList] = useState<UploadFile[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
   const { data = [], isLoading } = useStaffQuery();
   const createMutation = useCreateStaffMutation();
   const updateMutation = useUpdateStaffMutation();
@@ -34,6 +39,20 @@ export function StaffTable() {
       },
       { title: '手机号', dataIndex: 'chatHandsPhone' },
       { title: '微信号', dataIndex: 'chatHandsWx' },
+      {
+        title: '头像',
+        dataIndex: 'chatHandsWxAvatar',
+        width: 80,
+        render: (value?: string) => (
+          <Image
+            width={60}
+            src={value || ''}
+            preview={false}
+            alt="头像"
+            fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6ZAAABRklEQVR4Xu3QMQEAAADCoPVPbQhfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA1v9QAATX68/0AAAAASUVORK5CYII="
+          />
+        )
+      },
       { title: '状态', dataIndex: 'status', width: 120, render: (value) => (value === 1 ? '启用' : '停用') },
       { title: '备注', dataIndex: 'remark' },
       {
@@ -68,9 +87,11 @@ export function StaffTable() {
       chatHandsName: '',
       chatHandsPhone: '',
       chatHandsWx: '',
+      chatHandsWxAvatar: '',
       remark: '',
       status: 1
     });
+    setAvatarImageList([]);
   };
 
   // 打开编辑弹窗：回填当前记录
@@ -80,9 +101,73 @@ export function StaffTable() {
       chatHandsName: record.chatHandsName,
       chatHandsPhone: record.chatHandsPhone,
       chatHandsWx: record.chatHandsWx,
+      chatHandsWxAvatar: record.chatHandsWxAvatar,
       remark: record.remark,
       status: record.status ?? 1
     });
+    if (record.chatHandsWxAvatar) {
+      setAvatarImageList([
+        {
+          uid: record.id || 'avatar-image',
+          name: '头像',
+          status: 'done',
+          url: record.chatHandsWxAvatar
+        }
+      ]);
+      return;
+    }
+    setAvatarImageList([]);
+  };
+
+  const onUploadAvatar: UploadProps['customRequest'] = async (options) => {
+    setImageUploading(true);
+    try {
+      const uploadFile = options.file as File;
+      
+      // 使用 compressor.js 压缩图片
+      const compressedFile = await new Promise<File>((resolve, reject) => {
+        new Compressor(uploadFile, {
+          quality: 0.8,
+          maxWidth: 500,
+          maxHeight: 500,
+          success(result) {
+            resolve(new File([result], uploadFile.name, { type: result.type }));
+          },
+          error(err) {
+            reject(err);
+          }
+        });
+      });
+
+      const result = await uploadFiles({ files: compressedFile });
+      const uploaded = result.successList[0];
+      if (!uploaded?.fileUrl) {
+        throw new Error('上传失败，请重试');
+      }
+      form.setFieldsValue({ chatHandsWxAvatar: uploaded.fileUrl });
+      setAvatarImageList([
+        {
+          uid: uploaded.fileId || `${Date.now()}`,
+          name: uploaded.fileName || uploadFile.name,
+          status: 'done',
+          url: uploaded.fileUrl
+        }
+      ]);
+      options.onSuccess?.(uploaded);
+      form.setFieldValue(
+        'chatHandsWxAvatar',
+        uploaded.fileUrl
+      );
+    } catch (error) {
+      options.onError?.(error as Error);
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const onRemoveAvatar = () => {
+    form.setFieldsValue({ chatHandsWxAvatar: '' });
+    return true;
   };
 
   // 保存聊手：根据模式决定新增或编辑
@@ -139,6 +224,28 @@ export function StaffTable() {
           </Form.Item>
           <Form.Item label="微信号" name="chatHandsWx" rules={[{ required: true, message: '请输入微信号' }]}>
             <Input placeholder="请输入微信号" />
+          </Form.Item>
+          <Form.Item label="头像">
+            <Upload
+              fileList={avatarImageList}
+              listType="picture"
+              maxCount={1}
+              accept=".jpg,.jpeg,.png,.gif,.webp"
+              customRequest={onUploadAvatar}
+              onChange={({ fileList }) => setAvatarImageList(fileList)}
+              onRemove={onRemoveAvatar}
+              disabled={imageUploading}
+            >
+              {avatarImageList.length < 1 && (
+                <Button loading={imageUploading}>上传头像</Button>
+              )}
+            </Upload>
+          </Form.Item>
+          <Form.Item
+            name="chatHandsWxAvatar"
+            hidden
+          >
+            <Input />
           </Form.Item>
           <Form.Item label="状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
             <Select
